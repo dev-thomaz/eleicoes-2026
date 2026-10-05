@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "election:generate": "node scripts/election/generate-data.mjs"
   },
   "dependencies": {
     "next": "16.3.8",
