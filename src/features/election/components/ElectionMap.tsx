@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent } from "react";
+import { createPortal } from "react-dom";
 import {
   CANDIDATE_COLORS,
   CANDIDATE_LABEL,
@@ -39,8 +40,8 @@ interface ElectionMapProps {
 }
 
 interface TooltipState {
-  x: number;
-  y: number;
+  clientX: number;
+  clientY: number;
   datum: MapDatum;
 }
 
@@ -758,11 +759,9 @@ export function ElectionMap({
                     return;
                   }
 
-                  const rect =
-                    event.currentTarget.ownerSVGElement?.getBoundingClientRect();
                   setTooltip({
-                    x: event.clientX - (rect?.left ?? 0),
-                    y: event.clientY - (rect?.top ?? 0),
+                    clientX: event.clientX,
+                    clientY: event.clientY,
                     datum,
                   });
                 }}
@@ -771,11 +770,9 @@ export function ElectionMap({
                     return;
                   }
 
-                  const rect =
-                    event.currentTarget.ownerSVGElement?.getBoundingClientRect();
                   setTooltip({
-                    x: event.clientX - (rect?.left ?? 0),
-                    y: event.clientY - (rect?.top ?? 0),
+                    clientX: event.clientX,
+                    clientY: event.clientY,
                     datum,
                   });
                 }}
@@ -898,24 +895,34 @@ export function ElectionMap({
         </div>
       ) : null}
 
-      {tooltip ? (
-        <div
-          className="pointer-events-none absolute z-10 w-64 rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-lg"
-          style={{
-            left: Math.min(tooltip.x + 14, 520),
-            top: Math.max(tooltip.y - 12, 12),
-          }}
-        >
-          <div className="mb-2 font-semibold text-slate-950">
-            {isMunicipality(tooltip.datum)
-              ? `${tooltip.datum.name} - ${tooltip.datum.uf}`
-              : `${tooltip.datum.name} - ${tooltip.datum.uf}`}
-          </div>
-          <ComparedMapTooltip
-            datum={tooltip.datum as StateResult | MunicipalityResult}
-          />
-        </div>
-      ) : null}
+      {tooltip
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-[100] w-64 rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-lg"
+              style={{
+                left: Math.max(
+                  12,
+                  Math.min(tooltip.clientX + 14, window.innerWidth - 272),
+                ),
+                top: Math.max(
+                  12,
+                  Math.min(tooltip.clientY - 12, window.innerHeight - 190),
+                ),
+                maxHeight: "calc(100vh - 24px)",
+                maxWidth: "calc(100vw - 24px)",
+                overflowY: "auto",
+              }}
+            >
+              <div className="mb-2 font-semibold text-slate-950">
+                {tooltip.datum.name} - {tooltip.datum.uf}
+              </div>
+              <ComparedMapTooltip
+                datum={tooltip.datum as StateResult | MunicipalityResult}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
