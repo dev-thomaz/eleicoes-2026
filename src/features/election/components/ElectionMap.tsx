@@ -977,11 +977,22 @@ function CandidateMapTooltipRow({
           </span>
           {voteChange !== undefined ? (
             <span className="block text-xs text-slate-500">
-              {voteChange > 0
-                ? formatVotes(voteChange) + " a mais"
-                : voteChange < 0
-                  ? formatVotes(Math.abs(voteChange)) + " a menos"
-                  : "Sem variação"}{" "}
+              {voteChange === 0 ? (
+                "Sem variação"
+              ) : (
+                <>
+                  <span
+                    className={
+                      voteChange > 0
+                        ? "font-semibold text-blue-700"
+                        : "font-semibold text-orange-700"
+                    }
+                  >
+                    {formatVotes(Math.abs(voteChange))}
+                  </span>{" "}
+                  {voteChange > 0 ? "a mais" : "a menos"}
+                </>
+              )}{" "}
               vs. 1º turno
             </span>
           ) : null}

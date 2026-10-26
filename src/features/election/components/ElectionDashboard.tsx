@@ -262,10 +262,10 @@ function ElectionResultsDashboard({ turn }: { turn: 1 | 2 }) {
   const [mapFocusSelection, setMapFocusSelection] = useState<{
     turn: 1 | 2;
     value: CandidateKey | "leader";
-  }>(() => ({ turn, value: turn === 2 ? "lula" : "leader" }));
+  }>(() => ({ turn, value: "leader" }));
   const mapFocus = mapFocusSelection.turn === turn
     ? mapFocusSelection.value
-    : turn === 2 ? "lula" : "leader";
+    : "leader";
   const [zonesMunicipality, setZonesMunicipality] =
     useState<MunicipalityResult | null>(null);
   const [page, setPage] = useState(1);
