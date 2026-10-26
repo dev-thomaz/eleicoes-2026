@@ -205,12 +205,23 @@ async function loadFirstTurn(signal: AbortSignal): Promise<ElectionTurnDataset> 
 
 async function loadSecondTurn(signal: AbortSignal): Promise<ElectionTurnDataset> {
   const root = `${DATA_ROOT}/turn-2`;
-  const [metadata, national, states, municipalities, profiles] = await Promise.all([
+  const [
+    metadata,
+    national,
+    states,
+    municipalities,
+    firstTurnMunicipalities,
+    profiles,
+  ] = await Promise.all([
     fetchJson<TurnTwoMetadata>(`${root}/metadata.json`, signal),
     fetchJson<TurnTwoNational>(`${root}/national.json`, signal),
     fetchJson<TurnTwoState[]>(`${root}/states.json`, signal),
     fetchJson<TurnTwoMunicipalityDataset>(
       `${root}/municipalities-index.json`,
+      signal,
+    ),
+    fetchJson<MunicipalityDataset>(
+      DATA_ROOT + "/turn-1/municipalities-index.json",
       signal,
     ),
     loadProfiles(signal),
@@ -232,10 +243,30 @@ async function loadSecondTurn(signal: AbortSignal): Promise<ElectionTurnDataset>
     candidates: { lula: identities.lula, flavio: identities.flavio },
   };
 
+  const firstTurnByMunicipality = new Map(
+    firstTurnMunicipalities.municipalities.map((municipality) => [
+      municipality.ibgeCode,
+      municipality.results,
+    ]),
+  );
+
   return {
     metadata: normalizedMetadata,
     states: states.map(normalizeTurnTwoState),
-    municipalities: municipalities.municipalities.map(normalizeTurnTwoMunicipality),
+    municipalities: municipalities.municipalities.map((municipality) => {
+      const normalized = normalizeTurnTwoMunicipality(municipality);
+      const firstTurnResults = firstTurnByMunicipality.get(normalized.ibgeCode);
+
+      return firstTurnResults
+        ? {
+            ...normalized,
+            voteChangeFromFirstTurn: {
+              lula: normalized.results.lula.votes - firstTurnResults.lula.votes,
+              flavio: normalized.results.flavio.votes - firstTurnResults.flavio.votes,
+            },
+          }
+        : normalized;
+    }),
     electorateProfiles: profiles.profiles,
     electorateProfileError: profiles.error,
   };

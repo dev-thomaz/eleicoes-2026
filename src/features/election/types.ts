@@ -70,6 +70,7 @@ export interface MunicipalityResult extends ComparedResult, ElectionAreaStats {
   region: Region;
   sourceGeneratedAt: string;
   aggregationStatus: "n" | "p" | "f" | string;
+  voteChangeFromFirstTurn?: Record<CandidateKey, number>;
 }
 
 export interface ElectionMetadata {

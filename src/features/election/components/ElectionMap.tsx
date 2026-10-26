@@ -934,6 +934,11 @@ function ComparedMapTooltip({
           color={CANDIDATE_COLORS[candidate]}
           percentage={datum.results[candidate].percentage}
           votes={datum.results[candidate].votes}
+          voteChange={
+            isMunicipality(datum)
+              ? datum.voteChangeFromFirstTurn?.[candidate]
+              : undefined
+          }
         />
       ))}
       <div className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-600">
@@ -950,11 +955,13 @@ function CandidateMapTooltipRow({
   color,
   votes,
   percentage,
+  voteChange,
 }: {
   label: string;
   color: string;
   votes: number;
   percentage: number;
+  voteChange?: number;
 }) {
   return (
     <div className="flex items-start justify-between gap-3 py-1">
@@ -968,6 +975,16 @@ function CandidateMapTooltipRow({
           <span className="block text-xs text-slate-500">
             {formatVotes(votes)} votos
           </span>
+          {voteChange !== undefined ? (
+            <span className="block text-xs text-slate-500">
+              {voteChange > 0
+                ? formatVotes(voteChange) + " a mais"
+                : voteChange < 0
+                  ? formatVotes(Math.abs(voteChange)) + " a menos"
+                  : "Sem variação"}{" "}
+              vs. 1º turno
+            </span>
+          ) : null}
         </span>
       </span>
       <span className="shrink-0 pt-0.5 text-right font-semibold text-slate-950">
