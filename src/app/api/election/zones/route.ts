@@ -5,6 +5,8 @@ const TSE_BASE_URL = "https://resultados.tse.jus.br/oficial";
 const CYCLE = "ele2026";
 const ELECTION_ID = "6257";
 const PADDED_ELECTION_ID = "006257";
+const TURN_TWO_ELECTION_ID = "6258";
+const TURN_TWO_PADDED_ELECTION_ID = "006258";
 const OFFICE_CODE = "0001";
 const TSE_FETCH_TIMEOUT_MS = 8_000;
 const ZONE_FETCH_CONCURRENCY = 4;
@@ -27,6 +29,8 @@ const CANDIDATES = {
 >;
 
 type TSECandidate = {
+  nm?: string;
+  nmu?: string;
   n?: string | number;
   sqcand?: string | number;
   vap?: string | number;
@@ -187,10 +191,36 @@ function extractComparedResult(ea20: TSEResultPayload) {
   };
 }
 
+function extractCandidateResult(ea20: TSEResultPayload, sequence: string) {
+  for (const office of ea20.carg ?? []) {
+    for (const aggregation of office.agr ?? []) {
+      for (const party of aggregation.par ?? []) {
+        for (const candidate of party.cand ?? []) {
+          if (String(candidate.sqcand) !== sequence) {
+            continue;
+          }
+
+          return {
+            candidateSequence: sequence,
+            candidateNumber: String(candidate.n ?? ""),
+            label: String(candidate.nmu ?? candidate.nm ?? "Candidato"),
+            votes: parseNumber(candidate.vap),
+            percentage: parseNumber(candidate.pvapn ?? candidate.pvap),
+          };
+        }
+      }
+    }
+  }
+
+  throw new Error(`Candidato selecionado não encontrado na zona ${ea20.cdabr}.`);
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const uf = searchParams.get("uf")?.toLowerCase();
   const tseCode = searchParams.get("tseCode");
+  const turnTwo = searchParams.get("turn") === "2";
+  const candidateSequence = searchParams.get("candidateSequence") ?? "";
 
   if (!uf || !tseCode || !/^[a-z]{2}$/.test(uf) || !/^\d+$/.test(tseCode)) {
     return NextResponse.json(
@@ -199,8 +229,19 @@ export async function GET(request: Request) {
     );
   }
 
+  if (turnTwo && !/^\d+$/.test(candidateSequence)) {
+    return NextResponse.json(
+      { error: "Selecione um candidato válido para consultar as zonas." },
+      { status: 400 },
+    );
+  }
+
   try {
-    const configUrl = `${TSE_BASE_URL}/${CYCLE}/${ELECTION_ID}/config/mun-e${PADDED_ELECTION_ID}-cm.json`;
+    const electionId = turnTwo ? TURN_TWO_ELECTION_ID : ELECTION_ID;
+    const paddedElectionId = turnTwo
+      ? TURN_TWO_PADDED_ELECTION_ID
+      : PADDED_ELECTION_ID;
+    const configUrl = `${TSE_BASE_URL}/${CYCLE}/${electionId}/config/mun-e${paddedElectionId}-cm.json`;
     const municipalityConfig = (await fetchJson(configUrl)) as TSEMunicipalityConfig;
     const stateConfig = municipalityConfig.abr?.find(
       (state) => String(state.cd).toLowerCase() === uf,
@@ -218,30 +259,32 @@ export async function GET(request: Request) {
     }
 
     const rows = await runPool(zones, ZONE_FETCH_CONCURRENCY, async (zoneCode) => {
-        const normalizedZone = String(zoneCode).padStart(4, "0");
-        const url = `${TSE_BASE_URL}/${CYCLE}/${ELECTION_ID}/dados/${uf}/${uf}${tseCode}-z${normalizedZone}-c${OFFICE_CODE}-e${PADDED_ELECTION_ID}-u.json`;
-        const zoneResult = (await fetchJson(url)) as TSEResultPayload;
-        const compared = extractComparedResult(zoneResult);
+      const normalizedZone = String(zoneCode).padStart(4, "0");
+      const url = `${TSE_BASE_URL}/${CYCLE}/${electionId}/dados/${uf}/${uf}${tseCode}-z${normalizedZone}-c${OFFICE_CODE}-e${paddedElectionId}-u.json`;
+      const zoneResult = (await fetchJson(url)) as TSEResultPayload;
+      const result = turnTwo
+        ? { selectedCandidate: extractCandidateResult(zoneResult, candidateSequence) }
+        : extractComparedResult(zoneResult);
 
-        return {
-          zoneCode: normalizedZone,
-          sourceGeneratedAt: toIsoDate(zoneResult.dg, zoneResult.hg),
-          aggregationStatus: String(zoneResult.and ?? ""),
-          sections: {
-            total: parseNumber(zoneResult.s?.ts),
-            totalized: parseNumber(zoneResult.s?.st),
-            notTotalized: parseNumber(zoneResult.s?.snt),
-            totalizedPercentage: parseNumber(zoneResult.s?.pstn ?? zoneResult.s?.pst),
-          },
-          electorate: {
-            eligible: parseNumber(zoneResult.e?.te),
-            turnout: parseNumber(zoneResult.e?.c),
-            turnoutPercentage: parseNumber(zoneResult.e?.pcn ?? zoneResult.e?.pc),
-            abstentions: parseNumber(zoneResult.e?.a),
-            abstentionPercentage: parseNumber(zoneResult.e?.pan ?? zoneResult.e?.pa),
-          },
-          ...compared,
-        };
+      return {
+        zoneCode: normalizedZone,
+        sourceGeneratedAt: toIsoDate(zoneResult.dg, zoneResult.hg),
+        aggregationStatus: String(zoneResult.and ?? ""),
+        sections: {
+          total: parseNumber(zoneResult.s?.ts),
+          totalized: parseNumber(zoneResult.s?.st),
+          notTotalized: parseNumber(zoneResult.s?.snt),
+          totalizedPercentage: parseNumber(zoneResult.s?.pstn ?? zoneResult.s?.pst),
+        },
+        electorate: {
+          eligible: parseNumber(zoneResult.e?.te),
+          turnout: parseNumber(zoneResult.e?.c),
+          turnoutPercentage: parseNumber(zoneResult.e?.pcn ?? zoneResult.e?.pc),
+          abstentions: parseNumber(zoneResult.e?.a),
+          abstentionPercentage: parseNumber(zoneResult.e?.pan ?? zoneResult.e?.pa),
+        },
+        ...result,
+      };
     });
 
     return NextResponse.json({
@@ -254,6 +297,7 @@ export async function GET(request: Request) {
       source: {
         configUrl,
       },
+      turn: turnTwo ? 2 : 1,
       zones: rows.sort((a, b) => a.zoneCode.localeCompare(b.zoneCode)),
     });
   } catch (error) {

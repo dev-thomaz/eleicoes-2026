@@ -36,7 +36,7 @@ This document tracks current status, known gaps, technical debt, risks, and futu
 - No visual regression tests for map behavior.
 - Root `README.md` still contains the default create-next-app content.
 - Candidate comparison is hard-coded to Lula and Flávio Bolsonaro.
-- The dashboard still consumes only first-turn results; second-turn data is generated separately but is not yet integrated into the interface.
+- Second-turn results are displayed in a separate candidate-at-a-time view; no cross-turn comparison is provided.
 - No dedicated routes for state or municipality pages.
 - No visible map legend explaining color, opacity, tie gray, and capital markers.
 - No explicit no-results empty state for table/rankings.

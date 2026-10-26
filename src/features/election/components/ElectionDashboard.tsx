@@ -29,6 +29,7 @@ import type {
   ViewLevel,
 } from "../types";
 import { ElectionMap } from "./ElectionMap";
+import { SecondTurnDashboard } from "./SecondTurnDashboard";
 
 const DATA_ROOT = "/data/election/2026/president/turn-1";
 const PAGE_SIZE = 24;
@@ -298,6 +299,49 @@ function getRegionVoteRows(municipalities: MunicipalityResult[]) {
 }
 
 export function ElectionDashboard() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const selectedTurn = searchParams.get("turn") === "2" ? "2" : "1";
+
+  function changeTurn(turn: string) {
+    const next = new URLSearchParams(searchParams.toString());
+    if (turn === "2") {
+      next.set("turn", "2");
+      next.delete("leader");
+      next.delete("candidate");
+    } else {
+      next.delete("turn");
+      next.delete("candidate");
+    }
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
+  return (
+    <>
+      <div className="bg-[#f6f7f9] pt-4">
+        <div className="mx-auto flex w-full max-w-[1480px] justify-end px-4 md:px-6 lg:px-8">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            Turno
+            <select
+              aria-label="Turno da eleição"
+              value={selectedTurn}
+              onChange={(event) => changeTurn(event.target.value)}
+              className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-slate-500"
+            >
+              <option value="1">1º turno</option>
+              <option value="2">2º turno</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      {selectedTurn === "2" ? <SecondTurnDashboard /> : <FirstTurnDashboard />}
+    </>
+  );
+}
+
+function FirstTurnDashboard() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

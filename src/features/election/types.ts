@@ -56,6 +56,37 @@ export interface MunicipalityResult extends ComparedResult {
   aggregationStatus: "n" | "p" | "f" | string;
 }
 
+export interface SingleCandidateMapState {
+  uf: string;
+  ibgeCode: string;
+  name: string;
+  region: Region;
+  municipalitiesCount: number;
+  aggregationStatus: string;
+  selectedCandidate: {
+    label: string;
+    color: string;
+    votes: number;
+    percentage: number;
+  };
+}
+
+export interface SingleCandidateMapMunicipality {
+  id: string;
+  ibgeCode: string;
+  tseCode: string;
+  name: string;
+  uf: string;
+  region: Region;
+  aggregationStatus: string;
+  selectedCandidate: {
+    label: string;
+    color: string;
+    votes: number;
+    percentage: number;
+  };
+}
+
 export interface ElectionMetadata {
   generatedAt: string;
   appGeneratedAt: string;

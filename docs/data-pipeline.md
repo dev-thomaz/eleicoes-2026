@@ -16,9 +16,9 @@ Second-turn result records are generated separately by `scripts/election/generat
 pnpm election:generate:turn-2
 ```
 
-This second script writes official candidate, state, and municipality records to `public/data/election/2026/president/turn-2/`. It is a data-generation command only; the current dashboard continues to read the first-turn dataset.
+This second script writes official candidate, state, and municipality records to `public/data/election/2026/president/turn-2/`. The dashboard loads these files when the second turn is selected and displays one candidate at a time. It does not calculate differences between turns.
 
-The exception to the static-data runtime model is the zone breakdown modal: `GET /api/election/zones` fetches TSE zone-level files on demand for the selected municipality. Those zone-level rows are not generated into `public/data`.
+The exception to the static-data runtime model is the zone breakdown modal: `GET /api/election/zones` fetches TSE zone-level files on demand for the selected municipality and turn. In the second-turn view, the request is scoped to the currently selected candidate. Those zone-level rows are not generated into `public/data`.
 
 ## Sources
 

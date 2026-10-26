@@ -1,14 +1,16 @@
 # Eleições 2026 | Geografia eleitoral
 
-Aplicação web interativa para explorar a geografia do comparativo presidencial de 2026 entre Lula e Flávio Bolsonaro, usando dados oficiais do TSE e malhas geográficas do IBGE.
+Aplicação web interativa para explorar resultados presidenciais de 2026 por turno e território, usando dados oficiais do TSE e malhas geográficas do IBGE.
 
 O projeto transforma dados públicos complexos em uma experiência visual para investigação territorial: mapas, filtros, rankings, tabela municipal, zonas eleitorais e perfil demográfico agregado do eleitorado.
 
-> Importante: a aplicação mostra a liderança dentro de um recorte comparativo entre dois candidatos. Ela não afirma que o líder exibido é necessariamente o vencedor oficial entre todos os candidatos. Os gráficos demográficos descrevem o perfil do eleitorado dos territórios, não o perfil individual de quem votou em cada candidato, pois o voto é secreto.
+> No primeiro turno, o painel compara Lula e Flávio Bolsonaro; isso não significa que o líder do recorte seja necessariamente o vencedor oficial entre todos os candidatos. No segundo turno, os resultados são exibidos para um candidato por vez, sem comparação entre turnos. Os gráficos demográficos do primeiro turno descrevem o perfil do eleitorado dos territórios, não o perfil individual de quem votou em cada candidato, pois o voto é secreto.
 
 ## Principais recursos
 
 - Mapa interativo por estados, municípios e modo nacional detalhado.
+- Seletor para consultar os turnos separadamente.
+- Consulta do segundo turno por candidato, estado e município, sem cálculo de variações entre turnos.
 - Filtros por região, estado, município e candidato líder.
 - Zoom, pan, hover e seleção no mapa SVG.
 - Destaque visual de capitais.
@@ -16,8 +18,8 @@ O projeto transforma dados públicos complexos em uma experiência visual para i
 - Ranking de municípios mais equilibrados e maiores margens por candidato.
 - Tabela municipal paginada com ordenação por margem, nome e percentual.
 - Painel de detalhes para estado ou município selecionado.
-- Modal de zonas eleitorais com resumo agregado de seções, comparecimento e votos por zona.
-- Seção de perfil do eleitorado com idade, sexo e votos por região no recorte filtrado.
+- Modal de zonas eleitorais com resumo agregado de seções e comparecimento; no segundo turno, votos por zona do candidato selecionado.
+- Seção de perfil do eleitorado no primeiro turno com idade, sexo e votos por região no recorte filtrado.
 - Pipeline de dados para gerar JSONs estáticos a partir de fontes oficiais.
 - Documentação técnica com arquitetura, modelo de dados, pipeline, decisões e estratégia de testes.
 
@@ -98,7 +100,7 @@ Para atualizar apenas os resultados oficiais do segundo turno:
 pnpm election:generate:turn-2
 ```
 
-Esse comando salva os registros oficiais por candidato, estado e município em `public/data/election/2026/president/turn-2/`. A coleta fica separada do primeiro turno; o dashboard ainda consome somente os dados de `turn-1`.
+Esse comando salva os registros oficiais por candidato, estado e município em `public/data/election/2026/president/turn-2/`. O dashboard carrega esses arquivos quando o segundo turno é selecionado; a consulta apresenta um candidato por vez.
 
 ## Validação
 
