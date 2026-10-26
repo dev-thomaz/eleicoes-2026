@@ -194,7 +194,7 @@ public/data/election/2026/president/turn-2/
     to.json
 ```
 
-Second-turn records preserve the candidate data published in each TSE response, along with area identity, section totalization, and electorate/turnout totals. The current frontend is not yet wired to this directory.
+Second-turn records preserve the candidate data published in each TSE response, along with area identity, section totalization, and electorate/turnout totals. The second-turn dashboard consumes the national, state, and municipality-index files to provide the same territorial exploration tools as the first-turn view.
 
 Geographic data:
 
@@ -215,19 +215,20 @@ Current generated dataset size is approximately:
 
 ## Runtime consumption
 
-The frontend currently loads:
+The first-turn frontend currently loads:
 
 - the national municipality index for table, rankings, filters, counts, and detailed mode data;
 - the electorate profile index for the dashboard demographic charts;
 - state results for state map and counts;
 - GeoJSON files on demand for the selected map mode.
 
-The per-UF election JSON files are generated but not currently used by the frontend.
+The second-turn frontend loads the corresponding national and state result files plus `municipalities-index.json`. The per-UF election JSON files are generated but not currently used by either dashboard. Both turns use the same electorate profile dataset because it describes voter registration, not individual candidate votes.
 
-For municipality zone breakdowns, the frontend calls the local Route Handler:
+For municipality zone breakdowns, the frontend calls the local Route Handler. First-turn requests compare the two candidates; second-turn requests also provide both candidate sequences so each zone returns both vote totals and the margin:
 
 ```text
 /api/election/zones?uf={UF}&tseCode={TSE_CODE}
+/api/election/zones?turn=2&uf={UF}&tseCode={TSE_CODE}&candidateSequence={SEQUENCE}&opponentCandidateSequence={SEQUENCE}
 ```
 
 The handler fetches the TSE municipality config to obtain zone codes and then fetches each zone result file. The response includes per-zone candidate results plus aggregate section and turnout fields. It does not currently include one row per individual voting section.

@@ -221,6 +221,7 @@ export async function GET(request: Request) {
   const tseCode = searchParams.get("tseCode");
   const turnTwo = searchParams.get("turn") === "2";
   const candidateSequence = searchParams.get("candidateSequence") ?? "";
+  const opponentCandidateSequence = searchParams.get("opponentCandidateSequence") ?? "";
 
   if (!uf || !tseCode || !/^[a-z]{2}$/.test(uf) || !/^\d+$/.test(tseCode)) {
     return NextResponse.json(
@@ -229,7 +230,11 @@ export async function GET(request: Request) {
     );
   }
 
-  if (turnTwo && !/^\d+$/.test(candidateSequence)) {
+  if (
+    turnTwo &&
+    (!/^\d+$/.test(candidateSequence) ||
+      (opponentCandidateSequence && !/^\d+$/.test(opponentCandidateSequence)))
+  ) {
     return NextResponse.json(
       { error: "Selecione um candidato válido para consultar as zonas." },
       { status: 400 },
@@ -262,9 +267,32 @@ export async function GET(request: Request) {
       const normalizedZone = String(zoneCode).padStart(4, "0");
       const url = `${TSE_BASE_URL}/${CYCLE}/${electionId}/dados/${uf}/${uf}${tseCode}-z${normalizedZone}-c${OFFICE_CODE}-e${paddedElectionId}-u.json`;
       const zoneResult = (await fetchJson(url)) as TSEResultPayload;
-      const result = turnTwo
-        ? { selectedCandidate: extractCandidateResult(zoneResult, candidateSequence) }
-        : extractComparedResult(zoneResult);
+      let result;
+      if (turnTwo) {
+        const selectedCandidate = extractCandidateResult(zoneResult, candidateSequence);
+        const opponentCandidate = opponentCandidateSequence
+          ? extractCandidateResult(zoneResult, opponentCandidateSequence)
+          : undefined;
+        result = {
+          selectedCandidate,
+          ...(opponentCandidate
+            ? {
+                opponentCandidate,
+                leader:
+                  selectedCandidate.votes === opponentCandidate.votes
+                    ? null
+                    : selectedCandidate.votes > opponentCandidate.votes
+                      ? "selected"
+                      : "opponent",
+                marginPercentagePoints: Math.abs(
+                  selectedCandidate.percentage - opponentCandidate.percentage,
+                ),
+              }
+            : {}),
+        };
+      } else {
+        result = extractComparedResult(zoneResult);
+      }
 
       return {
         zoneCode: normalizedZone,

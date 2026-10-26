@@ -35,7 +35,23 @@ export interface ComparedResult {
   marginPercentagePoints: number;
 }
 
-export interface StateResult extends ComparedResult {
+export interface ElectionAreaStats {
+  sections?: {
+    total: number;
+    totalized: number;
+    notTotalized: number;
+    totalizedPercentage: number;
+  };
+  electorate?: {
+    eligible: number;
+    turnout: number;
+    turnoutPercentage: number;
+    abstentions: number;
+    abstentionPercentage: number;
+  };
+}
+
+export interface StateResult extends ComparedResult, ElectionAreaStats {
   uf: string;
   ibgeCode: string;
   name: string;
@@ -45,7 +61,7 @@ export interface StateResult extends ComparedResult {
   aggregationStatus: "n" | "p" | "f" | string;
 }
 
-export interface MunicipalityResult extends ComparedResult {
+export interface MunicipalityResult extends ComparedResult, ElectionAreaStats {
   id: string;
   ibgeCode: string;
   tseCode: string;
@@ -54,37 +70,6 @@ export interface MunicipalityResult extends ComparedResult {
   region: Region;
   sourceGeneratedAt: string;
   aggregationStatus: "n" | "p" | "f" | string;
-}
-
-export interface SingleCandidateMapState {
-  uf: string;
-  ibgeCode: string;
-  name: string;
-  region: Region;
-  municipalitiesCount: number;
-  aggregationStatus: string;
-  selectedCandidate: {
-    label: string;
-    color: string;
-    votes: number;
-    percentage: number;
-  };
-}
-
-export interface SingleCandidateMapMunicipality {
-  id: string;
-  ibgeCode: string;
-  tseCode: string;
-  name: string;
-  uf: string;
-  region: Region;
-  aggregationStatus: string;
-  selectedCandidate: {
-    label: string;
-    color: string;
-    votes: number;
-    percentage: number;
-  };
 }
 
 export interface ElectionMetadata {

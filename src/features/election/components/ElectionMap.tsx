@@ -18,14 +18,12 @@ import type {
   CandidateKey,
   LeaderFilter,
   MunicipalityResult,
-  SingleCandidateMapMunicipality,
-  SingleCandidateMapState,
   StateResult,
   ViewLevel,
 } from "../types";
 
-type MapState = StateResult | SingleCandidateMapState;
-type MapMunicipality = MunicipalityResult | SingleCandidateMapMunicipality;
+type MapState = StateResult;
+type MapMunicipality = MunicipalityResult;
 type MapDatum = MapState | MapMunicipality;
 
 interface ElectionMapProps {
@@ -34,6 +32,7 @@ interface ElectionMapProps {
   states: MapState[];
   municipalities: MapMunicipality[];
   leaderFilter: LeaderFilter;
+  focusCandidate?: CandidateKey;
   selectedMunicipality: string;
   onStateClick: (uf: string) => void;
   onMunicipalityClick: (ibgeCode: string) => void;
@@ -92,26 +91,22 @@ function isMunicipality(datum: MapDatum): datum is MapMunicipality {
   return "tseCode" in datum;
 }
 
-function isSingleCandidateDatum(
-  datum: MapDatum,
-): datum is SingleCandidateMapState | SingleCandidateMapMunicipality {
-  return "selectedCandidate" in datum;
-}
-
 function hasEvenDisplayedMargin(datum: MapDatum) {
   return "marginPercentagePoints" in datum
     ? Math.round(datum.marginPercentagePoints * 100) === 0
     : false;
 }
 
-function getDatumColor(datum: MapDatum) {
-  if (isSingleCandidateDatum(datum)) {
-    return datum.selectedCandidate.color;
+function getDatumColor(datum: MapDatum, focusCandidate?: CandidateKey) {
+  if (hasEvenDisplayedMargin(datum)) {
+    return EVEN_MARGIN_COLOR;
   }
 
-  return hasEvenDisplayedMargin(datum)
-    ? EVEN_MARGIN_COLOR
-    : CANDIDATE_COLORS[datum.leader];
+  if (focusCandidate) {
+    return CANDIDATE_COLORS[focusCandidate];
+  }
+
+  return CANDIDATE_COLORS[datum.leader];
 }
 
 function getRawBounds(geoJson: GeoJsonFeatureCollection) {
@@ -329,6 +324,7 @@ export function ElectionMap({
   states,
   municipalities,
   leaderFilter,
+  focusCandidate,
   selectedMunicipality,
   onStateClick,
   onMunicipalityClick,
@@ -722,17 +718,18 @@ export function ElectionMap({
             const datum = feature.datum;
             const isFilteredOut =
               Boolean(datum) &&
-              !(datum && isSingleCandidateDatum(datum)) &&
               leaderFilter !== "all" &&
               datum?.leader !== leaderFilter;
-            const dataOpacity =
-              datum && isSingleCandidateDatum(datum)
-                ? Math.max(0.2, Math.min(0.88, 0.2 + datum.selectedCandidate.percentage / 100 * 0.68))
-                : datum
-                  ? isFilteredOut
-                    ? 0.22
-                    : 0.84
-                  : 0.1;
+            const focusedPercentage = datum && focusCandidate
+              ? datum.results[focusCandidate].percentage
+              : undefined;
+            const dataOpacity = datum
+              ? isFilteredOut
+                ? 0.22
+                : focusedPercentage !== undefined
+                  ? Math.max(0.2, Math.min(0.88, 0.2 + focusedPercentage / 100 * 0.68))
+                : 0.84
+              : 0.1;
             const selected =
               datum && !isFilteredOut && isMunicipality(datum)
                 ? datum.ibgeCode === selectedMunicipality
@@ -742,7 +739,7 @@ export function ElectionMap({
               <path
                 key={feature.id}
                 d={feature.path}
-                fill={datum ? getDatumColor(datum) : "#cbd5e1"}
+                fill={datum ? getDatumColor(datum, focusCandidate) : "#cbd5e1"}
                 fillOpacity={dataOpacity}
                 stroke={selected ? "#111827" : "#ffffff"}
                 strokeWidth={selected ? 2.8 : level === "detailed" ? 0.35 : 0.8}
@@ -805,7 +802,6 @@ export function ElectionMap({
           ))}
           {capitalFeatures.map((feature) => {
             const isFilteredOut =
-              !isSingleCandidateDatum(feature.datum) &&
               leaderFilter !== "all" &&
               feature.datum.leader !== leaderFilter;
             const markerScale = 1 / transform.scale;
@@ -820,18 +816,18 @@ export function ElectionMap({
                 <circle
                   r={5.4 * markerScale}
                   fill="white"
-                  stroke={getDatumColor(feature.datum)}
+                  stroke={getDatumColor(feature.datum, focusCandidate)}
                   strokeWidth={2}
                   vectorEffect="non-scaling-stroke"
                 />
                 <circle
                   r={2.1 * markerScale}
-                  fill={getDatumColor(feature.datum)}
+                  fill={getDatumColor(feature.datum, focusCandidate)}
                 />
                 <text
                   x={8 * markerScale}
                   y={-7 * markerScale}
-                  fill={getDatumColor(feature.datum)}
+                  fill={getDatumColor(feature.datum, focusCandidate)}
                   fontSize={11 * markerScale}
                   fontWeight={700}
                   paintOrder="stroke"
@@ -915,23 +911,9 @@ export function ElectionMap({
               ? `${tooltip.datum.name} - ${tooltip.datum.uf}`
               : `${tooltip.datum.name} - ${tooltip.datum.uf}`}
           </div>
-          {isSingleCandidateDatum(tooltip.datum) ? (
-            <>
-              <div className="flex items-center justify-between gap-3 text-slate-600">
-                <span>{tooltip.datum.selectedCandidate.label}</span>
-                <span className="font-semibold text-slate-950">
-                  {formatPercentage(tooltip.datum.selectedCandidate.percentage)}
-                </span>
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                {formatVotes(tooltip.datum.selectedCandidate.votes)} votos
-              </div>
-            </>
-          ) : (
-            <ComparedMapTooltip
-              datum={tooltip.datum as StateResult | MunicipalityResult}
-            />
-          )}
+          <ComparedMapTooltip
+            datum={tooltip.datum as StateResult | MunicipalityResult}
+          />
         </div>
       ) : null}
     </div>
@@ -946,27 +928,51 @@ function ComparedMapTooltip({
   return (
     <>
       {(["lula", "flavio"] as CandidateKey[]).map((candidate) => (
-        <div key={candidate} className="mb-1 flex items-center justify-between">
-          <span className="flex items-center gap-2 text-slate-600">
-            <span
-              className="h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: CANDIDATE_COLORS[candidate] }}
-            />
-            {CANDIDATE_LABEL[candidate]}
-          </span>
-          <span className="font-medium text-slate-950">
-            {formatPercentage(datum.results[candidate].percentage)}
-          </span>
-        </div>
+        <CandidateMapTooltipRow
+          key={candidate}
+          label={CANDIDATE_LABEL[candidate]}
+          color={CANDIDATE_COLORS[candidate]}
+          percentage={datum.results[candidate].percentage}
+          votes={datum.results[candidate].votes}
+        />
       ))}
       <div className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-600">
         Líder no comparativo:{" "}
         <strong className="text-slate-950">{CANDIDATE_LABEL[datum.leader]}</strong>{" "}
         por {formatMargin(datum.marginPercentagePoints)}
       </div>
-      <div className="mt-1 text-xs text-slate-500">
-        {formatVotes(datum.results[datum.leader].votes)} votos
-      </div>
     </>
+  );
+}
+
+function CandidateMapTooltipRow({
+  label,
+  color,
+  votes,
+  percentage,
+}: {
+  label: string;
+  color: string;
+  votes: number;
+  percentage: number;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-1">
+      <span className="flex min-w-0 items-center gap-2 text-slate-600">
+        <span
+          className="h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: color }}
+        />
+        <span className="min-w-0">
+          <span className="block truncate">{label}</span>
+          <span className="block text-xs text-slate-500">
+            {formatVotes(votes)} votos
+          </span>
+        </span>
+      </span>
+      <span className="shrink-0 pt-0.5 text-right font-semibold text-slate-950">
+        {formatPercentage(percentage)}
+      </span>
+    </div>
   );
 }

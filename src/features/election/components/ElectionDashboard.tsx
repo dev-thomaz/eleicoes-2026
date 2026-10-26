@@ -19,24 +19,28 @@ import type {
   CandidateKey,
   ElectionMetadata,
   ElectorateProfile,
-  ElectorateProfileDataset,
   FilterState,
   LeaderFilter,
-  MunicipalityDataset,
   MunicipalityResult,
   Region,
   StateResult,
   ViewLevel,
 } from "../types";
+import { loadElectionTurnData } from "../turn-data";
 import { ElectionMap } from "./ElectionMap";
-import { SecondTurnDashboard } from "./SecondTurnDashboard";
+import { ElectorateProfilePanel } from "./ElectorateProfilePanel";
 
-const DATA_ROOT = "/data/election/2026/president/turn-1";
 const PAGE_SIZE = 24;
 
-type SortKey = "name" | "lula" | "flavio" | "margin-desc" | "margin-asc";
+type SortKey =
+  | "name"
+  | "lula-votes"
+  | "flavio-votes"
+  | "lula-percentage"
+  | "flavio-percentage"
+  | "margin-desc"
+  | "margin-asc";
 type RankingKey = "largest-lula" | "largest-flavio" | "balanced";
-type Bucket = Record<string, number>;
 type ZoneBreakdown = {
   municipality: {
     tseCode: string;
@@ -67,16 +71,21 @@ type ZoneBreakdown = {
   }>;
 };
 
-type ElectorateAggregate = {
-  total: number;
-  byGender: Bucket;
-  byAge: Bucket;
+type TurnTwoZoneCandidate = {
+  candidateSequence: string;
+  candidateNumber: string;
+  label: string;
+  votes: number;
+  percentage: number;
 };
 
-type RegionVoteRow = {
-  region: Region;
-  lula: number;
-  flavio: number;
+type TurnTwoZoneBreakdown = Omit<ZoneBreakdown, "zones"> & {
+  zones: Array<
+    Omit<ZoneBreakdown["zones"][number], "results" | "leader" | "marginPercentagePoints"> & {
+      selectedCandidate: TurnTwoZoneCandidate;
+      opponentCandidate?: TurnTwoZoneCandidate;
+    }
+  >;
 };
 
 function getParamLevel(value: string | null): ViewLevel {
@@ -140,11 +149,11 @@ function getLeaderCounts<T extends { leader: CandidateKey }>(items: T[]) {
   );
 }
 
-function getSortedMunicipalities(
-  municipalities: MunicipalityResult[],
+function getSortedAreas(
+  areas: Array<StateResult | MunicipalityResult>,
   sortKey: SortKey,
 ) {
-  const sorted = [...municipalities];
+  const sorted = [...areas];
 
   sorted.sort((a, b) => {
     if (sortKey === "name") {
@@ -159,7 +168,11 @@ function getSortedMunicipalities(
       return a.marginPercentagePoints - b.marginPercentagePoints;
     }
 
-    return b.results[sortKey].percentage - a.results[sortKey].percentage;
+    const [candidate, metric] = sortKey.split("-") as [
+      CandidateKey,
+      "votes" | "percentage",
+    ];
+    return b.results[candidate][metric] - a.results[candidate][metric];
   });
 
   return sorted;
@@ -188,114 +201,6 @@ function getRanking(
   return sorted
     .sort((a, b) => a.marginPercentagePoints - b.marginPercentagePoints)
     .slice(0, 8);
-}
-
-function titleCaseLabel(value: string) {
-  return value
-    .toLowerCase()
-    .split(" ")
-    .map((word) => (word ? `${word[0].toUpperCase()}${word.slice(1)}` : word))
-    .join(" ");
-}
-
-function createElectorateAggregate(): ElectorateAggregate {
-  return {
-    total: 0,
-    byGender: {},
-    byAge: {},
-  };
-}
-
-function addBucket(target: Bucket, source: Bucket, labelMapper = (label: string) => label) {
-  for (const [label, value] of Object.entries(source)) {
-    const mappedLabel = labelMapper(label);
-    target[mappedLabel] = (target[mappedLabel] ?? 0) + value;
-  }
-}
-
-function getAgeGroup(label: string) {
-  const firstAge = Number(label.match(/\d+/)?.[0]);
-
-  if (!Number.isFinite(firstAge)) {
-    return "Não informado";
-  }
-
-  if (firstAge <= 24) {
-    return "16 a 24";
-  }
-
-  if (firstAge <= 34) {
-    return "25 a 34";
-  }
-
-  if (firstAge <= 44) {
-    return "35 a 44";
-  }
-
-  if (firstAge <= 59) {
-    return "45 a 59";
-  }
-
-  return "60+";
-}
-
-function aggregateElectorateProfiles(
-  municipalities: MunicipalityResult[],
-  profileByIbge: Map<string, ElectorateProfile>,
-) {
-  const aggregate = createElectorateAggregate();
-
-  for (const municipality of municipalities) {
-    const profile = profileByIbge.get(municipality.ibgeCode);
-
-    if (!profile) {
-      continue;
-    }
-
-    aggregate.total += profile.total;
-    addBucket(aggregate.byGender, profile.byGender, titleCaseLabel);
-    addBucket(aggregate.byAge, profile.byAge, getAgeGroup);
-  }
-
-  return aggregate;
-}
-
-function getDistribution(bucket: Bucket, total: number, order?: string[]) {
-  const entries = Object.entries(bucket).map(([label, value]) => ({
-    label,
-    value,
-    percentage: total > 0 ? (value / total) * 100 : 0,
-  }));
-
-  if (order) {
-    return entries.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label));
-  }
-
-  return entries.sort((a, b) => b.value - a.value);
-}
-
-function getRegionVoteRows(municipalities: MunicipalityResult[]) {
-  const rows = new Map<Region, RegionVoteRow>();
-
-  for (const municipality of municipalities) {
-    const current =
-      rows.get(municipality.region) ??
-      ({
-        region: municipality.region,
-        lula: 0,
-        flavio: 0,
-      } satisfies RegionVoteRow);
-
-    current.lula += municipality.results.lula.votes;
-    current.flavio += municipality.results.flavio.votes;
-    rows.set(municipality.region, current);
-  }
-
-  return [...rows.values()].sort(
-    (a, b) =>
-      Object.keys(REGION_LABEL).indexOf(a.region) -
-      Object.keys(REGION_LABEL).indexOf(b.region),
-  );
 }
 
 export function ElectionDashboard() {
@@ -336,12 +241,12 @@ export function ElectionDashboard() {
           </label>
         </div>
       </div>
-      {selectedTurn === "2" ? <SecondTurnDashboard /> : <FirstTurnDashboard />}
+      <ElectionResultsDashboard turn={selectedTurn === "2" ? 2 : 1} />
     </>
   );
 }
 
-function FirstTurnDashboard() {
+function ElectionResultsDashboard({ turn }: { turn: 1 | 2 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -354,6 +259,13 @@ function FirstTurnDashboard() {
   const [error, setError] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("margin-desc");
   const [ranking, setRanking] = useState<RankingKey>("balanced");
+  const [mapFocusSelection, setMapFocusSelection] = useState<{
+    turn: 1 | 2;
+    value: CandidateKey | "leader";
+  }>(() => ({ turn, value: turn === 2 ? "lula" : "leader" }));
+  const mapFocus = mapFocusSelection.turn === turn
+    ? mapFocusSelection.value
+    : turn === 2 ? "lula" : "leader";
   const [zonesMunicipality, setZonesMunicipality] =
     useState<MunicipalityResult | null>(null);
   const [page, setPage] = useState(1);
@@ -389,54 +301,41 @@ function FirstTurnDashboard() {
     [pathname, router, searchParams],
   );
 
+  const resetFilters = useCallback(() => {
+    const query = turn === 2 ? "?turn=2" : "";
+    router.replace(`${pathname}${query}`, { scroll: false });
+  }, [pathname, router, turn]);
+
   useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+
     async function loadData() {
       try {
         setIsLoading(true);
         setError("");
-
-        const [
-          metadataResponse,
-          statesResponse,
-          municipalitiesResponse,
-          electorateProfileResponse,
-        ] =
-          await Promise.all([
-            fetch(`${DATA_ROOT}/metadata.json`),
-            fetch(`${DATA_ROOT}/states.json`),
-            fetch(`${DATA_ROOT}/municipalities-index.json`),
-            fetch(`${DATA_ROOT}/electorate-profile.json`),
-          ]);
-
-        if (!metadataResponse.ok || !statesResponse.ok || !municipalitiesResponse.ok) {
-          throw new Error("Não foi possível carregar os dados gerados.");
-        }
-
-        const municipalityDataset =
-          (await municipalitiesResponse.json()) as MunicipalityDataset;
-
-        setMetadata((await metadataResponse.json()) as ElectionMetadata);
-        setStates((await statesResponse.json()) as StateResult[]);
-        setMunicipalities(municipalityDataset.municipalities);
-
-        if (electorateProfileResponse.ok) {
-          const electorateDataset =
-            (await electorateProfileResponse.json()) as ElectorateProfileDataset;
-          setElectorateProfiles(electorateDataset.profiles);
-          setElectorateProfileError("");
-        } else {
-          setElectorateProfiles([]);
-          setElectorateProfileError("Perfil do eleitorado ainda não foi gerado.");
-        }
+        const dataset = await loadElectionTurnData(turn, controller.signal);
+        if (cancelled) return;
+        setMetadata(dataset.metadata);
+        setStates(dataset.states);
+        setMunicipalities(dataset.municipalities);
+        setElectorateProfiles(dataset.electorateProfiles);
+        setElectorateProfileError(dataset.electorateProfileError);
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : String(loadError));
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     }
 
     void loadData();
-  }, []);
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [turn]);
 
   const normalizedQuery = normalizeSearch(filters.query);
 
@@ -480,18 +379,23 @@ function FirstTurnDashboard() {
         region: filters.region,
         uf: filters.uf,
         leader: filters.leader,
+      }).filter((state) => {
+        if (filters.level !== "states" || !normalizedQuery) return true;
+        return normalizeSearch(`${state.name} ${state.uf} ${state.ibgeCode}`).includes(normalizedQuery);
       }),
-    [filters.leader, filters.region, filters.uf, states],
+    [filters.leader, filters.level, filters.region, filters.uf, normalizedQuery, states],
   );
 
   const mapStates = useMemo(
-    () =>
-      filterStates(states, {
+    () => filterStates(states, {
         region: filters.region,
         uf: filters.uf,
         leader: "all",
+      }).filter((state) => {
+        if (filters.level !== "states" || !normalizedQuery) return true;
+        return normalizeSearch(`${state.name} ${state.uf} ${state.ibgeCode}`).includes(normalizedQuery);
       }),
-    [filters.region, filters.uf, states],
+    [filters.level, filters.region, filters.uf, normalizedQuery, states],
   );
 
   const availableStates = useMemo(() => {
@@ -506,13 +410,11 @@ function FirstTurnDashboard() {
     (municipality) => municipality.ibgeCode === filters.municipality,
   );
   const selectedState = states.find((state) => state.uf === filters.uf);
-  const sortedMunicipalities = getSortedMunicipalities(
-    filteredMunicipalities,
-    sortKey,
-  );
-  const pageCount = Math.max(1, Math.ceil(sortedMunicipalities.length / PAGE_SIZE));
+  const resultRows = filters.level === "states" ? filteredStates : filteredMunicipalities;
+  const sortedRows = getSortedAreas(resultRows, sortKey);
+  const pageCount = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
-  const currentRows = sortedMunicipalities.slice(
+  const currentRows = sortedRows.slice(
     (safePage - 1) * PAGE_SIZE,
     safePage * PAGE_SIZE,
   );
@@ -580,12 +482,11 @@ function FirstTurnDashboard() {
               Eleição presidencial 2026
             </p>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">
-              Geografia do comparativo Lula x Flávio Bolsonaro
+              Resultados de Lula x Flávio Bolsonaro · {metadata.turn}º turno
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Dados oficiais de divulgação do TSE. O mapa mostra quem lidera
-              dentro deste recorte comparativo, não o vencedor oficial entre todos
-              os candidatos.
+              Dados oficiais de divulgação do TSE. Explore votos, percentuais e
+              diferenças por estado e município.
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
@@ -613,7 +514,7 @@ function FirstTurnDashboard() {
                         type="button"
                         onClick={() => {
                           if (value === "states") {
-                            router.replace(pathname, { scroll: false });
+                            resetFilters();
                             return;
                           }
 
@@ -642,18 +543,14 @@ function FirstTurnDashboard() {
 
                   <button
                     type="button"
-                    onClick={() =>
-                      router.replace(pathname, {
-                        scroll: false,
-                      })
-                    }
+                    onClick={resetFilters}
                     className="h-10 rounded-md border border-slate-200 px-4 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 md:w-auto"
                   >
                     Limpar filtros
                   </button>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+                <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-5">
                   <label className="grid gap-1.5 text-xs font-medium text-slate-600">
                   Região
                   <select
@@ -723,7 +620,23 @@ function FirstTurnDashboard() {
                   </label>
 
                   <label className="grid gap-1.5 text-xs font-medium text-slate-600">
-                  Município
+                  Destaque no mapa
+                  <select
+                    value={mapFocus}
+                    onChange={(event) => setMapFocusSelection({
+                      turn,
+                      value: event.target.value as CandidateKey | "leader",
+                    })}
+                    className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-slate-500"
+                  >
+                    <option value="leader">Líder do território</option>
+                    <option value="lula">Lula</option>
+                    <option value="flavio">Flávio Bolsonaro</option>
+                  </select>
+                  </label>
+
+                  <label className="grid gap-1.5 text-xs font-medium text-slate-600">
+                  {filters.level === "states" ? "Estado" : "Município"}
                   <input
                     value={filters.query}
                     onChange={(event) =>
@@ -732,7 +645,7 @@ function FirstTurnDashboard() {
                         municipality: "",
                       })
                     }
-                    placeholder="Buscar por nome ou IBGE"
+                    placeholder={filters.level === "states" ? "Buscar por nome ou UF" : "Buscar por nome ou IBGE"}
                     className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-slate-500"
                   />
                   </label>
@@ -746,10 +659,37 @@ function FirstTurnDashboard() {
               states={mapStates}
               municipalities={mapMunicipalities}
               leaderFilter={filters.leader}
+              focusCandidate={mapFocus === "leader" ? undefined : mapFocus}
               selectedMunicipality={filters.municipality}
               onStateClick={handleStateClick}
               onMunicipalityClick={handleMunicipalityClick}
             />
+            {mapFocus === "leader" ? (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
+                <span className="font-medium text-slate-700">Líder por localidade</span>
+                {(["lula", "flavio"] as CandidateKey[]).map((candidate) => (
+                  <span key={candidate} className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CANDIDATE_COLORS[candidate] }} />
+                    {CANDIDATE_LABEL[candidate]}
+                  </span>
+                ))}
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+                  Empate
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-slate-600">
+                <span className="font-medium text-slate-700">{CANDIDATE_LABEL[mapFocus]}</span>
+                <span>Percentual de votos</span>
+                <span
+                  className="h-2.5 w-28 rounded-sm"
+                  style={{ background: `linear-gradient(to right, ${CANDIDATE_COLORS[mapFocus]}33, ${CANDIDATE_COLORS[mapFocus]})` }}
+                  aria-hidden="true"
+                />
+                <span>0% a 100%</span>
+              </div>
+            )}
           </div>
 
           <aside className="grid content-start gap-4">
@@ -831,11 +771,10 @@ function FirstTurnDashboard() {
           <div className="flex flex-col gap-3 border-b border-slate-200 p-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-base font-semibold text-slate-950">
-                Municípios
+                {filters.level === "states" ? "Resultados por estado" : "Resultados por município"}
               </h2>
               <p className="text-sm text-slate-600">
-                {filteredMunicipalities.length.toLocaleString("pt-BR")} municípios no
-                recorte atual
+                {resultRows.length.toLocaleString("pt-BR")} localidades no recorte atual
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -850,8 +789,10 @@ function FirstTurnDashboard() {
                 <option value="margin-desc">Maior margem</option>
                 <option value="margin-asc">Menor margem</option>
                 <option value="name">Nome</option>
-                <option value="lula">% Lula</option>
-                <option value="flavio">% Flávio</option>
+                <option value="lula-votes">Votos · Lula</option>
+                <option value="flavio-votes">Votos · Flávio</option>
+                <option value="lula-percentage">% Lula</option>
+                <option value="flavio-percentage">% Flávio</option>
               </select>
             </div>
           </div>
@@ -860,8 +801,8 @@ function FirstTurnDashboard() {
             <table className="min-w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Município</th>
-                  <th className="px-4 py-3 font-semibold">UF</th>
+                  <th className="px-4 py-3 font-semibold">{filters.level === "states" ? "Estado" : "Município"}</th>
+                  {filters.level !== "states" ? <th className="px-4 py-3 font-semibold">UF</th> : null}
                   <th className="px-4 py-3 font-semibold">Região</th>
                   <th className="px-4 py-3 text-right font-semibold">Lula</th>
                   <th className="px-4 py-3 text-right font-semibold">Flávio</th>
@@ -870,46 +811,49 @@ function FirstTurnDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {currentRows.map((municipality) => (
-                  <tr
-                    key={municipality.ibgeCode}
-                    className="cursor-pointer hover:bg-slate-50"
-                    onClick={() => handleMunicipalityClick(municipality.ibgeCode)}
-                  >
-                    <td className="px-4 py-3 font-medium text-slate-950">
-                      {municipality.name}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">{municipality.uf}</td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {REGION_LABEL[municipality.region]}
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-700">
-                      {formatVotes(municipality.results.lula.votes)}
-                      <div className="text-xs text-slate-500">
-                        {formatPercentage(municipality.results.lula.percentage)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-700">
-                      {formatVotes(municipality.results.flavio.votes)}
-                      <div className="text-xs text-slate-500">
-                        {formatPercentage(municipality.results.flavio.percentage)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className="rounded-full px-2 py-1 text-xs font-semibold text-white"
-                        style={{
-                          backgroundColor: CANDIDATE_COLORS[municipality.leader],
-                        }}
-                      >
-                        {CANDIDATE_LABEL[municipality.leader]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-slate-950">
-                      {formatMargin(municipality.marginPercentagePoints)}
+                {currentRows.map((area) => {
+                  const isMunicipality = "tseCode" in area;
+                  const onSelect = () => isMunicipality
+                    ? handleMunicipalityClick(area.ibgeCode)
+                    : handleStateClick(area.uf);
+                  return (
+                    <tr
+                      key={area.ibgeCode}
+                      className="cursor-pointer hover:bg-slate-50"
+                      onClick={onSelect}
+                    >
+                      <td className="px-4 py-3 font-medium text-slate-950">{area.name}</td>
+                      {filters.level !== "states" ? <td className="px-4 py-3 text-slate-700">{area.uf}</td> : null}
+                      <td className="px-4 py-3 text-slate-700">{REGION_LABEL[area.region]}</td>
+                      <td className="px-4 py-3 text-right text-slate-700">
+                        {formatVotes(area.results.lula.votes)}
+                        <div className="text-xs text-slate-500">{formatPercentage(area.results.lula.percentage)}</div>
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-700">
+                        {formatVotes(area.results.flavio.votes)}
+                        <div className="text-xs text-slate-500">{formatPercentage(area.results.flavio.percentage)}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className="rounded-full px-2 py-1 text-xs font-semibold text-white"
+                          style={{ backgroundColor: CANDIDATE_COLORS[area.leader] }}
+                        >
+                          {CANDIDATE_LABEL[area.leader]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-950">
+                        {formatMargin(area.marginPercentagePoints)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {currentRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={filters.level === "states" ? 6 : 7} className="px-4 py-8 text-center text-sm text-slate-500">
+                      Nenhuma localidade encontrada.
                     </td>
                   </tr>
-                ))}
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -917,7 +861,7 @@ function FirstTurnDashboard() {
           <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
             <button
               type="button"
-              disabled={page === 1}
+              disabled={safePage === 1}
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               className="rounded-md border border-slate-200 px-3 py-2 font-medium disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -928,7 +872,7 @@ function FirstTurnDashboard() {
             </span>
             <button
               type="button"
-              disabled={page === pageCount}
+              disabled={safePage === pageCount}
               onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
               className="rounded-md border border-slate-200 px-3 py-2 font-medium disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -939,6 +883,11 @@ function FirstTurnDashboard() {
         {zonesMunicipality ? (
           <ZonesModal
             municipality={zonesMunicipality}
+            turn={turn}
+            candidateSequences={{
+              lula: metadata.candidates.lula.candidateSequence,
+              flavio: metadata.candidates.flavio.candidateSequence,
+            }}
             onClose={() => setZonesMunicipality(null)}
           />
         ) : null}
@@ -964,227 +913,6 @@ function MetricCard({
       </div>
       <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
         {label}
-      </div>
-    </div>
-  );
-}
-
-function ElectorateProfilePanel({
-  municipalities,
-  profileByIbge,
-  profileError,
-}: {
-  municipalities: MunicipalityResult[];
-  profileByIbge: Map<string, ElectorateProfile>;
-  profileError: string;
-}) {
-  const leaderGroups = useMemo(
-    () => ({
-      lula: municipalities.filter((municipality) => municipality.leader === "lula"),
-      flavio: municipalities.filter((municipality) => municipality.leader === "flavio"),
-    }),
-    [municipalities],
-  );
-  const lulaProfile = useMemo(
-    () => aggregateElectorateProfiles(leaderGroups.lula, profileByIbge),
-    [leaderGroups.lula, profileByIbge],
-  );
-  const flavioProfile = useMemo(
-    () => aggregateElectorateProfiles(leaderGroups.flavio, profileByIbge),
-    [leaderGroups.flavio, profileByIbge],
-  );
-  const regionRows = useMemo(
-    () => getRegionVoteRows(municipalities),
-    [municipalities],
-  );
-  const coveredMunicipalities = municipalities.filter((municipality) =>
-    profileByIbge.has(municipality.ibgeCode),
-  ).length;
-  const totalElectorate = lulaProfile.total + flavioProfile.total;
-
-  return (
-    <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="grid gap-3 border-b border-slate-200 p-4 lg:grid-cols-[1fr_auto] lg:items-end">
-        <div>
-          <h2 className="text-base font-semibold text-slate-950">
-            Perfil do eleitorado
-          </h2>
-          <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-600">
-            Os gráficos mostram o perfil demográfico do eleitorado nos territórios
-            do recorte atual. Eles não identificam o perfil individual de quem
-            votou em cada candidato.
-          </p>
-        </div>
-        <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          <strong className="text-slate-950">{formatVotes(totalElectorate)}</strong>{" "}
-          eleitores em {coveredMunicipalities.toLocaleString("pt-BR")} municípios
-        </div>
-      </div>
-
-      {profileError ? (
-        <div className="m-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {profileError}
-        </div>
-      ) : null}
-
-      {!profileError ? (
-        <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <RegionVoteChart rows={regionRows} />
-          <div className="grid gap-4 lg:grid-cols-2">
-            <CandidateElectorateCard
-              candidate="lula"
-              municipalitiesCount={leaderGroups.lula.length}
-              profile={lulaProfile}
-            />
-            <CandidateElectorateCard
-              candidate="flavio"
-              municipalitiesCount={leaderGroups.flavio.length}
-              profile={flavioProfile}
-            />
-          </div>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function RegionVoteChart({ rows }: { rows: RegionVoteRow[] }) {
-  const maxVotes = Math.max(
-    1,
-    ...rows.flatMap((row) => [row.lula, row.flavio]),
-  );
-
-  return (
-    <div className="rounded-lg border border-slate-200 p-4">
-      <div className="mb-4">
-        <h3 className="text-sm font-semibold text-slate-950">
-          Votos por região
-        </h3>
-        <p className="text-xs text-slate-500">
-          Distribuição de votos no recorte filtrado.
-        </p>
-      </div>
-      <div className="grid gap-3">
-        {rows.map((row) => (
-          <div key={row.region} className="grid gap-2">
-            <div className="flex items-center justify-between text-xs font-medium text-slate-600">
-              <span>{REGION_LABEL[row.region]}</span>
-              <span>{formatVotes(row.lula + row.flavio)} votos comparados</span>
-            </div>
-            {(["lula", "flavio"] as CandidateKey[]).map((candidate) => (
-              <div key={candidate} className="grid grid-cols-[88px_1fr_82px] items-center gap-2">
-                <span className="text-xs text-slate-600">
-                  {CANDIDATE_LABEL[candidate]}
-                </span>
-                <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${((row[candidate] / maxVotes) * 100).toFixed(2)}%`,
-                      backgroundColor: CANDIDATE_COLORS[candidate],
-                    }}
-                  />
-                </div>
-                <span className="text-right text-xs font-medium text-slate-700">
-                  {formatVotes(row[candidate])}
-                </span>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CandidateElectorateCard({
-  candidate,
-  municipalitiesCount,
-  profile,
-}: {
-  candidate: CandidateKey;
-  municipalitiesCount: number;
-  profile: ElectorateAggregate;
-}) {
-  const ageOrder = ["16 a 24", "25 a 34", "35 a 44", "45 a 59", "60+", "Não informado"];
-  const genderDistribution = getDistribution(profile.byGender, profile.total);
-  const ageDistribution = getDistribution(profile.byAge, profile.total, ageOrder);
-
-  return (
-    <div className="rounded-lg border border-slate-200 p-4">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-950">
-            {`Territórios pró-${CANDIDATE_LABEL[candidate]}`}
-          </h3>
-          <p className="text-xs text-slate-500">
-            {municipalitiesCount.toLocaleString("pt-BR")} municípios no recorte
-          </p>
-        </div>
-        <div
-          className="rounded-md px-2.5 py-1 text-xs font-semibold text-white"
-          style={{ backgroundColor: CANDIDATE_COLORS[candidate] }}
-        >
-          {formatVotes(profile.total)}
-        </div>
-      </div>
-
-      {profile.total > 0 ? (
-        <div className="grid gap-4">
-          <BarList
-            title="Sexo"
-            rows={genderDistribution}
-            color={CANDIDATE_COLORS[candidate]}
-          />
-          <BarList
-            title="Idade"
-            rows={ageDistribution}
-            color={CANDIDATE_COLORS[candidate]}
-          />
-        </div>
-      ) : (
-        <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          Sem dados demográficos para este recorte.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BarList({
-  title,
-  rows,
-  color,
-}: {
-  title: string;
-  rows: Array<{ label: string; value: number; percentage: number }>;
-  color: string;
-}) {
-  return (
-    <div>
-      <h4 className="mb-2 text-xs font-semibold uppercase text-slate-500">
-        {title}
-      </h4>
-      <div className="grid gap-2">
-        {rows.map((row) => (
-          <div key={row.label} className="grid gap-1">
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="text-slate-600">{row.label}</span>
-              <span className="font-medium text-slate-800">
-                {formatPercentage(row.percentage, 1)}
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  width: `${row.percentage.toFixed(2)}%`,
-                  backgroundColor: color,
-                }}
-              />
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
@@ -1260,15 +988,37 @@ function DetailsPanel({
           {formatMargin(datum.marginPercentagePoints)} {CANDIDATE_LABEL[datum.leader]}
         </strong>
       </div>
+      {datum.sections && datum.electorate ? (
+        <dl className="mt-4 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
+          <DetailStat label="Comparecimento" value={formatVotes(datum.electorate.turnout)} />
+          <DetailStat
+            label="Seções totalizadas"
+            value={`${formatVotes(datum.sections.totalized)} / ${formatVotes(datum.sections.total)}`}
+          />
+        </dl>
+      ) : null}
+    </div>
+  );
+}
+
+function DetailStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium text-slate-500">{label}</dt>
+      <dd className="mt-1 text-sm font-semibold text-slate-950">{value}</dd>
     </div>
   );
 }
 
 function ZonesModal({
   municipality,
+  turn,
+  candidateSequences,
   onClose,
 }: {
   municipality: MunicipalityResult;
+  turn: 1 | 2;
+  candidateSequences: Record<CandidateKey, string>;
   onClose: () => void;
 }) {
   const [data, setData] = useState<ZoneBreakdown | null>(null);
@@ -1291,6 +1041,11 @@ function ZonesModal({
           uf: municipality.uf,
           tseCode: municipality.tseCode,
         });
+        if (turn === 2) {
+          params.set("turn", "2");
+          params.set("candidateSequence", candidateSequences.lula);
+          params.set("opponentCandidateSequence", candidateSequences.flavio);
+        }
         const response = await fetch(`/api/election/zones?${params.toString()}`, {
           signal: controller.signal,
         });
@@ -1300,8 +1055,41 @@ function ZonesModal({
           throw new Error(payload.error || "Não foi possível carregar zonas.");
         }
 
-        if (!isCancelled) {
+        if (isCancelled) return;
+        if (turn === 1) {
           setData(payload as ZoneBreakdown);
+        } else {
+          const secondTurnPayload = payload as TurnTwoZoneBreakdown;
+          setData({
+            ...secondTurnPayload,
+            zones: secondTurnPayload.zones.map((zone) => {
+              const candidates = [zone.selectedCandidate, zone.opponentCandidate]
+                .filter((candidate): candidate is TurnTwoZoneCandidate => Boolean(candidate));
+              const candidateResult = (key: CandidateKey) => {
+                const result = candidates.find(
+                  (candidate) => candidate.candidateSequence === candidateSequences[key],
+                );
+                return {
+                  candidateSequence: candidateSequences[key],
+                  candidateNumber: key === "lula" ? "13" : "22",
+                  votes: result?.votes ?? 0,
+                  percentage: result?.percentage ?? 0,
+                };
+              };
+              const results = {
+                lula: candidateResult("lula"),
+                flavio: candidateResult("flavio"),
+              };
+              return {
+                ...zone,
+                results,
+                leader: results.lula.votes >= results.flavio.votes ? "lula" : "flavio",
+                marginPercentagePoints: Math.abs(
+                  results.lula.percentage - results.flavio.percentage,
+                ),
+              };
+            }),
+          });
         }
       } catch (loadError) {
         if (!isCancelled) {
@@ -1329,7 +1117,7 @@ function ZonesModal({
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [municipality.tseCode, municipality.uf, reloadKey]);
+  }, [candidateSequences, municipality.tseCode, municipality.uf, reloadKey, turn]);
 
   return (
     <div
@@ -1354,7 +1142,7 @@ function ZonesModal({
               Zonas e seções de {municipality.name} - {municipality.uf}
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              Recorte por zona eleitoral com resumo agregado das seções totalizadas.
+              {turn}º turno · votação por candidato e resumo das seções totalizadas.
             </p>
           </div>
           <button
