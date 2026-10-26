@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "election:generate": "node scripts/election/generate-data.mjs"
+    "election:generate": "node scripts/election/generate-data.mjs",
+    "election:generate:turn-2": "node scripts/election/generate-turn-two-data.mjs"
   },
   "dependencies": {
     "next": "16.3.8",

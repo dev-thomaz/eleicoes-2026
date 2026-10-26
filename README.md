@@ -92,6 +92,14 @@ pnpm election:generate
 
 Esse comando acessa serviços externos do TSE e do IBGE, baixa arquivos grandes e reescreve os JSONs/GeoJSONs estáticos.
 
+Para atualizar apenas os resultados oficiais do segundo turno:
+
+```bash
+pnpm election:generate:turn-2
+```
+
+Esse comando salva os registros oficiais por candidato, estado e município em `public/data/election/2026/president/turn-2/`. A coleta fica separada do primeiro turno; o dashboard ainda consome somente os dados de `turn-1`.
+
 ## Validação
 
 Comandos usados para validar o projeto:

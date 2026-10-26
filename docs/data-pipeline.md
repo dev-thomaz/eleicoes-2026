@@ -2,13 +2,21 @@
 
 ## Current implementation
 
-The data pipeline is implemented in `scripts/election/generate-data.mjs` and exposed through:
+The first-turn data pipeline is implemented in `scripts/election/generate-data.mjs` and exposed through:
 
 ```bash
 pnpm election:generate
 ```
 
 The pipeline is not executed at application runtime. It generates static JSON and GeoJSON files under `public/data`.
+
+Second-turn result records are generated separately by `scripts/election/generate-turn-two-data.mjs`:
+
+```bash
+pnpm election:generate:turn-2
+```
+
+This second script writes official candidate, state, and municipality records to `public/data/election/2026/president/turn-2/`. It is a data-generation command only; the current dashboard continues to read the first-turn dataset.
 
 The exception to the static-data runtime model is the zone breakdown modal: `GET /api/election/zones` fetches TSE zone-level files on demand for the selected municipality. Those zone-level rows are not generated into `public/data`.
 
@@ -42,6 +50,17 @@ Current election parameters in the implementation:
 - office name: `Presidente`;
 - turn: first turn in the generated metadata;
 - cycle discovered from TSE config, currently `ele2026`.
+
+Second-turn result parameters:
+
+- election ID: `6258`;
+- pleito code: `3221`;
+- office code: `0001`;
+- office name: `Presidente`;
+- turn: second turn in the generated metadata;
+- cycle: `ele2026`.
+
+The pleito code and election ID identify different TSE concepts. Result URLs use election ID `6258`.
 
 ### IBGE geographic meshes
 
@@ -160,6 +179,22 @@ public/data/election/2026/president/turn-1/
     ...
     to.json
 ```
+
+The second-turn generator writes:
+
+```text
+public/data/election/2026/president/turn-2/
+  metadata.json
+  national.json
+  states.json
+  municipalities-index.json
+  municipalities/
+    ac.json
+    ...
+    to.json
+```
+
+Second-turn records preserve the candidate data published in each TSE response, along with area identity, section totalization, and electorate/turnout totals. The current frontend is not yet wired to this directory.
 
 Geographic data:
 
