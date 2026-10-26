@@ -49,6 +49,7 @@ export interface ElectionAreaStats {
     abstentions: number;
     abstentionPercentage: number;
   };
+  voteChangeFromFirstTurn?: Record<CandidateKey, number>;
 }
 
 export interface StateResult extends ComparedResult, ElectionAreaStats {
@@ -70,7 +71,6 @@ export interface MunicipalityResult extends ComparedResult, ElectionAreaStats {
   region: Region;
   sourceGeneratedAt: string;
   aggregationStatus: "n" | "p" | "f" | string;
-  voteChangeFromFirstTurn?: Record<CandidateKey, number>;
 }
 
 export interface ElectionMetadata {

@@ -934,11 +934,7 @@ function ComparedMapTooltip({
           color={CANDIDATE_COLORS[candidate]}
           percentage={datum.results[candidate].percentage}
           votes={datum.results[candidate].votes}
-          voteChange={
-            isMunicipality(datum)
-              ? datum.voteChangeFromFirstTurn?.[candidate]
-              : undefined
-          }
+          voteChange={datum.voteChangeFromFirstTurn?.[candidate]}
         />
       ))}
       <div className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-600">

@@ -2,6 +2,7 @@ import type {
   CandidateIdentity,
   CandidateKey,
   CandidateResult,
+  ComparedResult,
   ElectionMetadata,
   ElectorateProfile,
   ElectorateProfileDataset,
@@ -164,6 +165,21 @@ function normalizeTurnTwoMunicipality(
   };
 }
 
+function addVoteChangeFromFirstTurn<T extends ComparedResult>(
+  current: T,
+  firstTurnResults?: ComparedResult["results"],
+): T & { voteChangeFromFirstTurn?: Record<CandidateKey, number> } {
+  if (!firstTurnResults) return current;
+
+  return {
+    ...current,
+    voteChangeFromFirstTurn: {
+      lula: current.results.lula.votes - firstTurnResults.lula.votes,
+      flavio: current.results.flavio.votes - firstTurnResults.flavio.votes,
+    },
+  };
+}
+
 async function fetchJson<T>(url: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`Não foi possível carregar ${url}.`);
@@ -210,6 +226,7 @@ async function loadSecondTurn(signal: AbortSignal): Promise<ElectionTurnDataset>
     national,
     states,
     municipalities,
+    firstTurnStates,
     firstTurnMunicipalities,
     profiles,
   ] = await Promise.all([
@@ -220,6 +237,7 @@ async function loadSecondTurn(signal: AbortSignal): Promise<ElectionTurnDataset>
       `${root}/municipalities-index.json`,
       signal,
     ),
+    fetchJson<StateResult[]>(DATA_ROOT + "/turn-1/states.json", signal),
     fetchJson<MunicipalityDataset>(
       DATA_ROOT + "/turn-1/municipalities-index.json",
       signal,
@@ -243,6 +261,9 @@ async function loadSecondTurn(signal: AbortSignal): Promise<ElectionTurnDataset>
     candidates: { lula: identities.lula, flavio: identities.flavio },
   };
 
+  const firstTurnByState = new Map(
+    firstTurnStates.map((state) => [state.ibgeCode, state.results]),
+  );
   const firstTurnByMunicipality = new Map(
     firstTurnMunicipalities.municipalities.map((municipality) => [
       municipality.ibgeCode,
@@ -252,20 +273,18 @@ async function loadSecondTurn(signal: AbortSignal): Promise<ElectionTurnDataset>
 
   return {
     metadata: normalizedMetadata,
-    states: states.map(normalizeTurnTwoState),
+    states: states.map((state) =>
+      addVoteChangeFromFirstTurn(
+        normalizeTurnTwoState(state),
+        firstTurnByState.get(state.ibgeCode),
+      ),
+    ),
     municipalities: municipalities.municipalities.map((municipality) => {
       const normalized = normalizeTurnTwoMunicipality(municipality);
-      const firstTurnResults = firstTurnByMunicipality.get(normalized.ibgeCode);
-
-      return firstTurnResults
-        ? {
-            ...normalized,
-            voteChangeFromFirstTurn: {
-              lula: normalized.results.lula.votes - firstTurnResults.lula.votes,
-              flavio: normalized.results.flavio.votes - firstTurnResults.flavio.votes,
-            },
-          }
-        : normalized;
+      return addVoteChangeFromFirstTurn(
+        normalized,
+        firstTurnByMunicipality.get(normalized.ibgeCode),
+      );
     }),
     electorateProfiles: profiles.profiles,
     electorateProfileError: profiles.error,
